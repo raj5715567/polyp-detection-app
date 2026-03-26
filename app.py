@@ -20,7 +20,7 @@ st.set_page_config(page_title="AI Polyp Detection", layout="wide")
 MODEL_PATH = "model.weights.h5"
 
 if not os.path.exists(MODEL_PATH):
-    with st.spinner("📥 Downloading AI Model... (only first time)"):
+    with st.spinner("📥 Downloading AI Model... (first time only)"):
         url = "https://drive.google.com/uc?id=1JCO8bi5W1RPUu6xJKVp3m0D-e02cZhrp"
         gdown.download(url, MODEL_PATH, quiet=False)
 
@@ -45,8 +45,8 @@ st.markdown("""
     backdrop-filter: blur(15px);
 }
 .high { color: #ff4b5c; font-size: 24px; font-weight: bold; }
-.low { color: #00e676; font-size: 24px; font-weight: bold; }
 .medium { color: #ffd54f; font-size: 24px; font-weight: bold; }
+.low { color: #00e676; font-size: 24px; font-weight: bold; }
 img { border-radius: 15px; }
 </style>
 """, unsafe_allow_html=True)
@@ -54,7 +54,7 @@ img { border-radius: 15px; }
 st.markdown('<div class="title">🧠 AI Polyp Risk Detection</div>', unsafe_allow_html=True)
 
 # -------------------------
-# MODEL
+# MODEL ARCHITECTURE
 # -------------------------
 def DeeplabV3(input_shape=(256,256,3)):
 
@@ -64,12 +64,49 @@ def DeeplabV3(input_shape=(256,256,3)):
         input_tensor=Input(shape=input_shape)
     )
 
-    x = base_model.output
-    x = tf.keras.layers.UpSampling2D(size=(32,32))(x)
-    x = tf.keras.layers.Conv2D(1,(1,1),activation='sigmoid')(x)
+    layer_names = ['conv4_block6_out','conv5_block3_out']
+    layers = [base_model.get_layer(name).output for name in layer_names]
+
+    b4 = tf.keras.layers.GlobalAveragePooling2D()(layers[-1])
+    b4 = tf.keras.layers.Reshape((1,1,b4.shape[-1]))(b4)
+    b4 = tf.keras.layers.Conv2D(256,1,padding='same',use_bias=False)(b4)
+    b4 = tf.keras.layers.BatchNormalization()(b4)
+    b4 = tf.keras.layers.Activation('relu')(b4)
+    b4 = tf.keras.layers.UpSampling2D(
+        size=(layers[-1].shape[1], layers[-1].shape[2]),
+        interpolation='bilinear')(b4)
+
+    b0 = tf.keras.layers.Conv2D(256,1,padding='same',use_bias=False)(layers[-1])
+    b0 = tf.keras.layers.BatchNormalization()(b0)
+    b0 = tf.keras.layers.Activation('relu')(b0)
+
+    b1 = tf.keras.layers.Conv2D(256,3,padding='same',dilation_rate=6,use_bias=False)(layers[-1])
+    b1 = tf.keras.layers.BatchNormalization()(b1)
+    b1 = tf.keras.layers.Activation('relu')(b1)
+
+    b2 = tf.keras.layers.Conv2D(256,3,padding='same',dilation_rate=12,use_bias=False)(layers[-1])
+    b2 = tf.keras.layers.BatchNormalization()(b2)
+    b2 = tf.keras.layers.Activation('relu')(b2)
+
+    b3 = tf.keras.layers.Conv2D(256,3,padding='same',dilation_rate=18,use_bias=False)(layers[-1])
+    b3 = tf.keras.layers.BatchNormalization()(b3)
+    b3 = tf.keras.layers.Activation('relu')(b3)
+
+    x = tf.keras.layers.Concatenate()([b4,b0,b1,b2,b3])
+    x = tf.keras.layers.Conv2D(256,1,padding='same',use_bias=False)(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.UpSampling2D(size=(4,4), interpolation='bilinear')(x)
+
+    x = tf.keras.layers.Conv2D(1,(1,1))(x)
+    x = tf.keras.layers.Activation('sigmoid')(x)
+    x = tf.keras.layers.UpSampling2D(size=(8,8), interpolation='bilinear')(x)
 
     return Model(inputs=base_model.input, outputs=x)
 
+# -------------------------
+# LOAD MODEL
+# -------------------------
 @st.cache_resource
 def load_model_weights():
     model = DeeplabV3()
@@ -106,7 +143,7 @@ if uploaded:
         pixels = np.sum(mask)
 
         # -------------------------
-        # RELATIVE AREA (FINAL METHOD)
+        # RELATIVE AREA (FINAL)
         # -------------------------
         total_pixels = mask.shape[0] * mask.shape[1]
         relative_area = pixels / total_pixels
@@ -124,14 +161,14 @@ if uploaded:
         mask_resized = cv2.resize(mask, (img_np.shape[1], img_np.shape[0]))
 
         overlay = img_np.copy()
-        overlay[mask_resized==1] = [255,0,0]
+        overlay[mask_resized == 1] = [255, 0, 0]
 
-        blended = cv2.addWeighted(img_np,0.7,overlay,0.3,0)
+        blended = cv2.addWeighted(img_np, 0.7, overlay, 0.3, 0)
 
-        contours,_ = cv2.findContours(mask_resized.astype(np.uint8),
-                                      cv2.RETR_EXTERNAL,
-                                      cv2.CHAIN_APPROX_SIMPLE)
-        cv2.drawContours(blended,contours,-1,(0,255,0),2)
+        contours, _ = cv2.findContours(mask_resized.astype(np.uint8),
+                                       cv2.RETR_EXTERNAL,
+                                       cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(blended, contours, -1, (0,255,0), 2)
 
     # -------------------------
     # DISPLAY
@@ -160,12 +197,12 @@ if uploaded:
     else:
         st.success("✅ Low risk detected")
 
-    st.progress(min(relative_area,1.0))
+    st.progress(min(relative_area, 1.0))
 
     st.markdown('</div>', unsafe_allow_html=True)
 
     # -------------------------
-    # REPORT DOWNLOAD
+    # DOWNLOAD REPORT
     # -------------------------
     report = f"""
 Polyp Detection Report
@@ -179,6 +216,9 @@ Risk Level: {risk}
     href = f'<a href="data:file/txt;base64,{b64}" download="report.txt">📥 Download Report</a>'
     st.markdown(href, unsafe_allow_html=True)
 
+    # -------------------------
+    # MASK
+    # -------------------------
     st.subheader("🧬 Segmentation Mask")
     st.image(mask*255, width=400)
 

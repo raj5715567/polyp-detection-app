@@ -40,7 +40,7 @@ def download_model():
 
         # ✅ verify
         size = os.path.getsize(MODEL_PATH) / (1024*1024)
-        st.write(f"Downloaded size: {size:.2f} MB"))
+        st.write(f"Downloaded size: {size:.2f} MB")
 
 # -------------------------
 # UI STYLE (UNCHANGED)

@@ -7,42 +7,75 @@ import gdown
 import os
 
 # -------------------------
-# CONFIG
+# FORCE LEGACY KERAS (IMPORTANT FIX)
 # -------------------------
-st.set_page_config(page_title="AI Polyp Detection", layout="wide")
+os.environ["TF_USE_LEGACY_KERAS"] = "1"
 
 # -------------------------
-# DOWNLOAD MODEL
+# CONFIG
+# -------------------------
+st.set_page_config(page_title="Polyp Detection", layout="wide")
+
+# -------------------------
+# MODEL DOWNLOAD
 # -------------------------
 MODEL_PATH = "model.keras"
 
 if not os.path.exists(MODEL_PATH):
-    with st.spinner("📥 Downloading AI Model..."):
+    with st.spinner("📥 Downloading model..."):
         url = "https://drive.google.com/uc?id=1IDbuJqZ5way9b1TPk-W7tTp8iYKUbTJ-"
         gdown.download(url, MODEL_PATH, quiet=False)
 
 # -------------------------
-# LOAD MODEL (CORRECT WAY)
+# LOAD MODEL (FIXED)
 # -------------------------
 @st.cache_resource
-def load_model():
-    return tf.keras.models.load_model(MODEL_PATH, compile=False)
+def load_my_model():
+    return tf.keras.models.load_model(
+        MODEL_PATH,
+        compile=False,
+        safe_mode=False   # 🔥 VERY IMPORTANT
+    )
 
-model = load_model()
+model = load_my_model()
 
 # -------------------------
 # PREPROCESS
 # -------------------------
 def preprocess(img):
-    img = img.resize((256,256))
-    img = np.array(img)/255.0
+    img = img.resize((256, 256))
+    img = np.array(img) / 255.0
     return np.expand_dims(img, axis=0)
 
 # -------------------------
-# UI
+# UI DESIGN
 # -------------------------
-st.title("🧠 AI Polyp Risk Detection")
+st.markdown("""
+<style>
+.stApp {
+    background: linear-gradient(135deg, #0f2027, #2c5364);
+}
+.title {
+    text-align: center;
+    font-size: 40px;
+    color: white;
+    font-weight: bold;
+}
+.card {
+    padding: 20px;
+    border-radius: 15px;
+    background: rgba(255,255,255,0.1);
+}
+.high { color: red; font-size: 25px; }
+.low { color: lightgreen; font-size: 25px; }
+</style>
+""", unsafe_allow_html=True)
 
+st.markdown('<div class="title">🧠 AI Polyp Detection System</div>', unsafe_allow_html=True)
+
+# -------------------------
+# UPLOAD
+# -------------------------
 uploaded = st.file_uploader("Upload Image", type=["jpg","png","jpeg"])
 
 if uploaded:
@@ -52,44 +85,53 @@ if uploaded:
 
     col1, col2 = st.columns(2)
 
-    with st.spinner("🔍 AI Analyzing..."):
+    with col1:
+        st.image(image, caption="Uploaded Image", use_container_width=True)
+
+    with st.spinner("🔍 Analyzing..."):
 
         pred = model.predict(preprocess(image))
         mask = (pred > 0.5).astype(np.uint8).squeeze()
 
-        pixels = np.sum(mask)
+        # AREA CALCULATION
+        positive_pixels = np.sum(mask)
         total_pixels = mask.shape[0] * mask.shape[1]
-        relative_area = pixels / total_pixels
+        area = positive_pixels / total_pixels
 
-        if relative_area > 0.15:
+        # RISK
+        if area > 0.15:
             risk = "HIGH RISK"
-        elif relative_area > 0.05:
+        elif area > 0.05:
             risk = "MODERATE RISK"
         else:
             risk = "LOW RISK"
 
-        # Overlay
+        # OVERLAY
         mask_resized = cv2.resize(mask, (img_np.shape[1], img_np.shape[0]))
-
         overlay = img_np.copy()
         overlay[mask_resized == 1] = [255, 0, 0]
-
         blended = cv2.addWeighted(img_np, 0.7, overlay, 0.3, 0)
 
-    with col1:
-        st.image(image, caption="Original Image")
-
     with col2:
-        st.image(blended, caption="Detection Output")
+        st.image(blended, caption="Detection Output", use_container_width=True)
 
-    st.write(f"Area: {relative_area*100:.2f}%")
-    st.write(f"Risk: {risk}")
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+
+        if "HIGH" in risk:
+            st.markdown(f'<div class="high">⚠️ {risk}</div>', unsafe_allow_html=True)
+        else:
+            st.markdown(f'<div class="low">✅ {risk}</div>', unsafe_allow_html=True)
+
+        st.metric("Area (%)", f"{area*100:.2f}")
+        st.metric("Positive Pixels", int(positive_pixels))
+
+        st.markdown('</div>', unsafe_allow_html=True)
 
     st.subheader("Segmentation Mask")
-    st.image(mask*255)
+    st.image(mask * 255)
 
 # -------------------------
 # FOOTER
 # -------------------------
 st.markdown("---")
-st.markdown("🚀 Final Year Project • AI Medical Assistant")
+st.markdown("🚀 Final Year Project | AI Medical Assistant")

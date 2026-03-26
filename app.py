@@ -21,14 +21,26 @@ import os
 
 MODEL_PATH = "model.weights.h5"
 
+import gdown
+import os
+import tensorflow as tf
+
+MODEL_PATH = "model.keras"
+
 def download_model():
     if not os.path.exists(MODEL_PATH):
-
-        url = "https://drive.google.com/uc?id=1JCO8bi5W1RPUu6xJKVp3m0D-e02cZhrp"
-
+        url = "https://drive.google.com/uc?id=1IDbuJqZ5way9b1TPk-W7tTp8iYKUbTJ-"
+        
         with st.spinner("📥 Downloading model..."):
             gdown.download(url, MODEL_PATH, quiet=False)
-# -------------------------
+
+def load_model():
+    download_model()
+    
+    model = tf.keras.models.load_model(MODEL_PATH, compile=False)
+    return model
+
+model = load_model()
 # UI STYLE
 # -------------------------
 st.markdown("""

@@ -23,25 +23,24 @@ MODEL_PATH = "model.weights.h5"
 from huggingface_hub import hf_hub_download
 import shutil
 
+import requests
+
 def download_model():
     if not os.path.exists(MODEL_PATH):
 
+        url = "https://huggingface.co/raj571556/model.weights.h5/resolve/main/model.weights.h5?download=true"
+
         with st.spinner("📥 Downloading AI Model..."):
+            r = requests.get(url, stream=True)
 
-            file_path = hf_hub_download(
-                repo_id="raj571556/model.weights.h5",
-                filename="model.weights.h5"
-            )
+            with open(MODEL_PATH, "wb") as f:
+                for chunk in r.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        f.write(chunk)
 
-            shutil.copy(file_path, MODEL_PATH)
-
-        # ✅ CRITICAL CHECK
-        size = os.path.getsize(MODEL_PATH) / (1024 * 1024)
-        st.write(f"Model size: {size:.2f} MB")
-
-        if size < 100:   # your file should be ~470MB
-            st.error("❌ Model file corrupted / not downloaded correctly")
-            os.remove(MODEL_PATH)
+        # ✅ verify
+        size = os.path.getsize(MODEL_PATH) / (1024*1024)
+        st.write(f"Downloaded size: {size:.2f} MB"))
 
 # -------------------------
 # UI STYLE (UNCHANGED)

@@ -67,7 +67,7 @@ def DeeplabV3(input_shape=(256,256,3)):
     return tf.keras.models.Model(inputs=base_model.input, outputs=x)
 
 # -------------------------
-# LOAD MODEL (FINAL CORRECT)
+# LOAD MODEL (FINAL)
 # -------------------------
 def load_model():
 
@@ -76,10 +76,8 @@ def load_model():
     model = DeeplabV3()
     model(np.zeros((1,256,256,3)))
 
-    # 🔥 CORRECT METHOD (TF 2.13)
+    # 🔥 THIS WILL NOW WORK
     tf.keras.saving.load_weights_only(model, MODEL_PATH)
-
-    st.success("✅ Model loaded correctly")
 
     return model
 
@@ -106,7 +104,6 @@ uploaded = st.file_uploader("Upload Image", type=["jpg","png","jpeg"])
 if uploaded:
 
     image = Image.open(uploaded).convert("RGB")
-    img_np = np.array(image)
 
     st.image(image, caption="Original")
 

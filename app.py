@@ -3,11 +3,9 @@ import numpy as np
 import cv2
 from PIL import Image
 import tensorflow as tf
-from tensorflow.keras.layers import Input
-from tensorflow.keras.models import Model
 import base64
 import os
-import requests
+import gdown
 import h5py
 
 # -------------------------
@@ -15,33 +13,52 @@ import h5py
 # -------------------------
 st.set_page_config(page_title="AI Polyp Detection", layout="wide")
 
-MODEL_PATH = "model.weights.h5"
-import gdown
-import os
-
-MODEL_PATH = "model.weights.h5"
-
-import gdown
-import os
-import tensorflow as tf
-
 MODEL_PATH = "model.keras"
 
+# -------------------------
+# DOWNLOAD MODEL (FIXED)
+# -------------------------
 def download_model():
     if not os.path.exists(MODEL_PATH):
-        url = "https://drive.google.com/uc?id=1IDbuJqZ5way9b1TPk-W7tTp8iYKUbTJ-"
-        
-        with st.spinner("📥 Downloading model..."):
-            gdown.download(url, MODEL_PATH, quiet=False)
 
+        url = "https://drive.google.com/uc?id=1IDbuJqZ5way9b1TPk-W7tTp8iYKUbTJ-"
+
+        with st.spinner("📥 Downloading model..."):
+            gdown.download(
+                url,
+                MODEL_PATH,
+                quiet=False,
+                fuzzy=True   # 🔥 IMPORTANT
+            )
+
+        # ✅ VERIFY FILE
+        try:
+            with h5py.File(MODEL_PATH, "r") as f:
+                st.write("✅ Model file valid")
+        except:
+            st.error("❌ Invalid model file (download failed)")
+            os.remove(MODEL_PATH)
+            st.stop()
+
+# -------------------------
+# LOAD MODEL
+# -------------------------
 def load_model():
     download_model()
-    
     model = tf.keras.models.load_model(MODEL_PATH, compile=False)
     return model
 
-model = load_model()
-# UI STYLE
+# -------------------------
+# LOAD MODEL SAFE
+# -------------------------
+try:
+    model = load_model()
+except Exception as e:
+    st.error(f"❌ Model loading failed: {e}")
+    st.stop()
+
+# -------------------------
+# UI STYLE (UNCHANGED)
 # -------------------------
 st.markdown("""
 <style>
@@ -72,81 +89,6 @@ img {
 st.markdown('<div class="title">🧠 AI Polyp Risk Detection</div>', unsafe_allow_html=True)
 
 # -------------------------
-# MODEL (UNCHANGED)
-# -------------------------
-def DeeplabV3(input_shape=(256,256,3), num_classes=1):
-
-    base_model = tf.keras.applications.ResNet50(
-        weights=None,
-        include_top=False,
-        input_tensor=Input(shape=input_shape)
-    )
-
-    layer_names = ['conv4_block6_out','conv5_block3_out']
-    layers = [base_model.get_layer(name).output for name in layer_names]
-
-    b4 = tf.keras.layers.GlobalAveragePooling2D()(layers[-1])
-    b4 = tf.keras.layers.Reshape((1,1,b4.shape[-1]))(b4)
-    b4 = tf.keras.layers.Conv2D(256,1,padding='same',use_bias=False)(b4)
-    b4 = tf.keras.layers.BatchNormalization()(b4)
-    b4 = tf.keras.layers.Activation('relu')(b4)
-    b4 = tf.keras.layers.UpSampling2D(size=(layers[-1].shape[1],layers[-1].shape[2]), interpolation='bilinear')(b4)
-
-    b0 = tf.keras.layers.Conv2D(256,1,padding='same',use_bias=False)(layers[-1])
-    b0 = tf.keras.layers.BatchNormalization()(b0)
-    b0 = tf.keras.layers.Activation('relu')(b0)
-
-    b1 = tf.keras.layers.Conv2D(256,3,padding='same',dilation_rate=6,use_bias=False)(layers[-1])
-    b1 = tf.keras.layers.BatchNormalization()(b1)
-    b1 = tf.keras.layers.Activation('relu')(b1)
-
-    b2 = tf.keras.layers.Conv2D(256,3,padding='same',dilation_rate=12,use_bias=False)(layers[-1])
-    b2 = tf.keras.layers.BatchNormalization()(b2)
-    b2 = tf.keras.layers.Activation('relu')(b2)
-
-    b3 = tf.keras.layers.Conv2D(256,3,padding='same',dilation_rate=18,use_bias=False)(layers[-1])
-    b3 = tf.keras.layers.BatchNormalization()(b3)
-    b3 = tf.keras.layers.Activation('relu')(b3)
-
-    x = tf.keras.layers.Concatenate()([b4,b0,b1,b2,b3])
-    x = tf.keras.layers.Conv2D(256,1,padding='same',use_bias=False)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Activation('relu')(x)
-    x = tf.keras.layers.UpSampling2D(size=(4,4), interpolation='bilinear')(x)
-
-    x = tf.keras.layers.Conv2D(1,(1,1))(x)
-    x = tf.keras.layers.Activation('sigmoid')(x)
-    x = tf.keras.layers.UpSampling2D(size=(8,8), interpolation='bilinear')(x)
-
-    return Model(inputs=base_model.input, outputs=x)
-
-# -------------------------
-# LOAD MODEL
-# -------------------------
-def load_model_weights():
-
-    download_model()
-
-    model = DeeplabV3()
-
-    # ✅ BUILD MODEL
-    model(np.zeros((1,256,256,3)))
-
-    # ✅ STRICT LOAD (NO mismatch tricks)
-    model.load_weights(MODEL_PATH)
-
-    return model
-
-# -------------------------
-# LOAD MODEL
-# -------------------------
-try:
-    model = load_model_weights()
-except Exception as e:
-    st.error(f"❌ Model loading failed: {e}")
-    st.stop()
-
-# -------------------------
 # PREPROCESS
 # -------------------------
 def preprocess(img):
@@ -155,7 +97,7 @@ def preprocess(img):
     return np.expand_dims(img, axis=0)
 
 # -------------------------
-# UI
+# UPLOAD
 # -------------------------
 uploaded = st.file_uploader("📤 Upload Medical Image", type=["jpg","png","jpeg"])
 
@@ -182,18 +124,25 @@ if uploaded:
         else:
             risk = "LOW RISK"
 
+        # Resize mask
         mask_resized = cv2.resize(mask, (img_np.shape[1], img_np.shape[0]))
 
+        # Overlay
         overlay = img_np.copy()
-        overlay[mask_resized==1] = [255,0,0]
+        overlay[mask_resized == 1] = [255, 0, 0]
+        blended = cv2.addWeighted(img_np, 0.7, overlay, 0.3, 0)
 
-        blended = cv2.addWeighted(img_np,0.7,overlay,0.3,0)
+        # Contours
+        contours, _ = cv2.findContours(
+            mask_resized.astype(np.uint8),
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE
+        )
+        cv2.drawContours(blended, contours, -1, (0, 255, 0), 2)
 
-        contours,_ = cv2.findContours(mask_resized.astype(np.uint8),
-                                      cv2.RETR_EXTERNAL,
-                                      cv2.CHAIN_APPROX_SIMPLE)
-        cv2.drawContours(blended,contours,-1,(0,255,0),2)
-
+    # -------------------------
+    # DISPLAY
+    # -------------------------
     with col1:
         st.image(image, caption="Original Image", width=400)
 
@@ -219,6 +168,9 @@ if uploaded:
 
     st.markdown('</div>', unsafe_allow_html=True)
 
+    # -------------------------
+    # REPORT DOWNLOAD
+    # -------------------------
     report = f"""
 Polyp Detection Report
 
@@ -231,6 +183,9 @@ Risk Level: {risk}
     href = f'<a href="data:file/txt;base64,{b64}" download="report.txt">📥 Download Report</a>'
     st.markdown(href, unsafe_allow_html=True)
 
+    # -------------------------
+    # MASK
+    # -------------------------
     st.subheader("🧬 Segmentation Mask")
     st.image(mask*255, width=400)
 

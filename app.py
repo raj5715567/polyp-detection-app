@@ -5,33 +5,28 @@ from PIL import Image
 import tensorflow as tf
 from tensorflow.keras.layers import Input
 from tensorflow.keras.models import Model
-import os
 import gdown
-import base64
+import os
 
-# -------------------------
-# CONFIG
-# -------------------------
 st.set_page_config(page_title="AI Polyp Detection", layout="wide")
 
 # -------------------------
-# DOWNLOAD MODEL (FINAL FIX)
+# DOWNLOAD MODEL
 # -------------------------
 WEIGHTS_PATH = "model.weights.h5"
 
 def download_model():
     if not os.path.exists(WEIGHTS_PATH):
-        with st.spinner("Downloading AI model... ⏳"):
-            url = "https://drive.google.com/file/d/1JCO8bi5W1RPUu6xJKVp3m0D-e02cZhrp/view"
-            gdown.download(url, WEIGHTS_PATH, fuzzy=True)
+        url = "https://drive.google.com/uc?id=1JCO8bi5W1RPUu6xJKVp3m0D-e02cZhrp"
+        gdown.download(url, WEIGHTS_PATH, quiet=False)
 
 # -------------------------
-# MODEL ARCHITECTURE
+# MODEL (FIXED)
 # -------------------------
-def DeeplabV3(input_shape=(256,256,3), num_classes=1):
+def DeeplabV3(input_shape=(256,256,3)):
 
     base_model = tf.keras.applications.ResNet50(
-        weights=None,
+        weights='imagenet',   # ✅ FIX
         include_top=False,
         input_tensor=Input(shape=input_shape)
     )
@@ -78,13 +73,13 @@ def DeeplabV3(input_shape=(256,256,3), num_classes=1):
 # LOAD MODEL
 # -------------------------
 @st.cache_resource
-def load_model_weights():
+def load_model():
     download_model()
     model = DeeplabV3()
     model.load_weights(WEIGHTS_PATH)
     return model
 
-model = load_model_weights()
+model = load_model()
 
 # -------------------------
 # PREPROCESS
@@ -92,7 +87,7 @@ model = load_model_weights()
 def preprocess(img):
     img = img.resize((256,256))
     img = np.array(img)/255.0
-    return np.expand_dims(img, axis=0)
+    return np.expand_dims(img,0)
 
 # -------------------------
 # UI

@@ -12,30 +12,29 @@ import gdown
 # -------------------------
 st.set_page_config(page_title="AI Polyp Detection", layout="wide")
 
-MODEL_PATH = "model.keras"
+MODEL_PATH = "model.weights.h5"
 
 # -------------------------
-# DOWNLOAD MODEL (FINAL FIX)
+# DOWNLOAD MODEL
 # -------------------------
 def download_model():
     if not os.path.exists(MODEL_PATH):
 
-        url = "https://drive.google.com/uc?id=1IDbuJqZ5way9b1TPk-W7tTp8iYKUbTJ-"
+        url = "https://drive.google.com/uc?id=1JCO8bi5W1RPUu6xJKVp3m0D-e02cZhrp"
 
         with st.spinner("📥 Downloading model..."):
             gdown.download(url, MODEL_PATH, quiet=False, fuzzy=True)
 
-        # ✅ SIZE CHECK (NO h5py for .keras)
         size = os.path.getsize(MODEL_PATH) / (1024 * 1024)
         st.write(f"Downloaded size: {size:.2f} MB")
 
-        if size < 300:  # expected ~470MB
+        if size < 300:
             st.error("❌ Model file corrupted")
             os.remove(MODEL_PATH)
             st.stop()
 
 # -------------------------
-# LOAD MODEL
+# LOAD MODEL (FINAL FIX)
 # -------------------------
 def load_model():
     download_model()
@@ -163,7 +162,7 @@ if uploaded:
     st.markdown('</div>', unsafe_allow_html=True)
 
     # -------------------------
-    # REPORT DOWNLOAD
+    # REPORT
     # -------------------------
     report = f"""
 Polyp Detection Report

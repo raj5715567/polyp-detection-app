@@ -19,15 +19,20 @@ MODEL_PATH = "model.weights.h5"
 # -------------------------
 # DOWNLOAD MODEL (SAFE HF)
 # -------------------------
+from huggingface_hub import hf_hub_download
+import shutil
+
 def download_model():
     if not os.path.exists(MODEL_PATH):
         with st.spinner("📥 Downloading AI Model..."):
+
             file_path = hf_hub_download(
                 repo_id="raj571556/model.weights.h5",
                 filename="model.weights.h5"
             )
-            os.rename(file_path, MODEL_PATH)
 
+            # ✅ FIX: use copy instead of rename
+            shutil.copy(file_path, MODEL_PATH)
 # -------------------------
 # UI STYLE (UNCHANGED)
 # -------------------------

@@ -16,37 +16,18 @@ import h5py
 st.set_page_config(page_title="AI Polyp Detection", layout="wide")
 
 MODEL_PATH = "model.weights.h5"
-MODEL_URL = "https://huggingface.co/raj571556/model.weights.h5/resolve/main/model.weights.h5?download=true"
+import gdown
+import os
 
-# -------------------------
-# DOWNLOAD + VERIFY MODEL
-# -------------------------
+MODEL_PATH = "model.weights.h5"
+
 def download_model():
-    
-    # 🔥 FORCE CLEAN DOWNLOAD
-    if os.path.exists(MODEL_PATH):
-        os.remove(MODEL_PATH)
+    if not os.path.exists(MODEL_PATH):
 
-    with st.spinner("📥 Downloading AI Model..."):
-        r = requests.get(MODEL_URL, stream=True)
+        url = "https://drive.google.com/uc?id=1JCO8bi5W1RPUu6xJKVp3m0D-e02cZhrp"
 
-        with open(MODEL_PATH, "wb") as f:
-            for chunk in r.iter_content(chunk_size=1024 * 1024):
-                if chunk:
-                    f.write(chunk)
-
-    # ✅ SIZE CHECK
-    size = os.path.getsize(MODEL_PATH) / (1024 * 1024)
-    st.write(f"Downloaded size: {size:.2f} MB")
-
-    # ❗ CRITICAL: VERIFY FILE INTEGRITY
-    try:
-        with h5py.File(MODEL_PATH, "r") as f:
-            st.write("✅ Model file is valid")
-    except:
-        st.error("❌ Model file corrupted. Please redeploy.")
-        st.stop()
-
+        with st.spinner("📥 Downloading model..."):
+            gdown.download(url, MODEL_PATH, quiet=False)
 # -------------------------
 # UI STYLE
 # -------------------------

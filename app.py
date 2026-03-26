@@ -3,9 +3,6 @@ import numpy as np
 import cv2
 from PIL import Image
 import tensorflow as tf
-from tensorflow.keras.layers import Input
-from tensorflow.keras.models import Model
-import base64
 import gdown
 import os
 
@@ -15,111 +12,23 @@ import os
 st.set_page_config(page_title="AI Polyp Detection", layout="wide")
 
 # -------------------------
-# DOWNLOAD MODEL FROM DRIVE
+# DOWNLOAD MODEL
 # -------------------------
-MODEL_PATH = "model.weights.h5"
+MODEL_PATH = "model.keras"
 
-if not os.path.isfile(MODEL_PATH):   # ✅ FIXED
+if not os.path.exists(MODEL_PATH):
     with st.spinner("📥 Downloading AI Model..."):
-        url = "https://drive.google.com/uc?id=1JCO8bi5W1RPUu6xJKVp3m0D-e02cZhrp"
+        url = "https://drive.google.com/uc?id=1IDbuJqZ5way9b1TPk-W7tTp8iYKUbTJ-"
         gdown.download(url, MODEL_PATH, quiet=False)
 
 # -------------------------
-# UI STYLE
+# LOAD MODEL (CORRECT WAY)
 # -------------------------
-st.markdown("""
-<style>
-.stApp {
-    background: linear-gradient(135deg, #141e30, #243b55);
-    color: white;
-}
-.title {
-    text-align: center;
-    font-size: 45px;
-    font-weight: bold;
-}
-.card {
-    padding: 25px;
-    border-radius: 20px;
-    background: rgba(255,255,255,0.08);
-    backdrop-filter: blur(15px);
-}
-.high { color: #ff4b5c; font-size: 24px; font-weight: bold; }
-.medium { color: #ffd54f; font-size: 24px; font-weight: bold; }
-.low { color: #00e676; font-size: 24px; font-weight: bold; }
-img { border-radius: 15px; }
-</style>
-""", unsafe_allow_html=True)
+@st.cache_resource
+def load_model():
+    return tf.keras.models.load_model(MODEL_PATH, compile=False)
 
-st.markdown('<div class="title">🧠 AI Polyp Risk Detection</div>', unsafe_allow_html=True)
-
-# -------------------------
-# MODEL ARCHITECTURE (UNCHANGED - YOUR VERSION)
-# -------------------------
-def DeeplabV3(input_shape=(256,256,3)):
-
-    base_model = tf.keras.applications.ResNet50(
-        weights='imagenet',   # ✅ IMPORTANT
-        include_top=False,
-        input_tensor=Input(shape=input_shape)
-    )
-
-    layer_names = ['conv4_block6_out','conv5_block3_out']
-    layers = [base_model.get_layer(name).output for name in layer_names]
-
-    b4 = tf.keras.layers.GlobalAveragePooling2D()(layers[-1])
-    b4 = tf.keras.layers.Reshape((1,1,b4.shape[-1]))(b4)
-    b4 = tf.keras.layers.Conv2D(256,1,padding='same',use_bias=False)(b4)
-    b4 = tf.keras.layers.BatchNormalization()(b4)
-    b4 = tf.keras.layers.Activation('relu')(b4)
-
-    # ✅ FIXED UPSAMPLING
-    b4 = tf.keras.layers.UpSampling2D(
-        size=(layers[-1].shape[1] // b4.shape[1],
-              layers[-1].shape[2] // b4.shape[2]),
-        interpolation='bilinear')(b4)
-
-    b0 = tf.keras.layers.Conv2D(256,1,padding='same',use_bias=False)(layers[-1])
-    b0 = tf.keras.layers.BatchNormalization()(b0)
-    b0 = tf.keras.layers.Activation('relu')(b0)
-
-    b1 = tf.keras.layers.Conv2D(256,3,padding='same',dilation_rate=6,use_bias=False)(layers[-1])
-    b1 = tf.keras.layers.BatchNormalization()(b1)
-    b1 = tf.keras.layers.Activation('relu')(b1)
-
-    b2 = tf.keras.layers.Conv2D(256,3,padding='same',dilation_rate=12,use_bias=False)(layers[-1])
-    b2 = tf.keras.layers.BatchNormalization()(b2)
-    b2 = tf.keras.layers.Activation('relu')(b2)
-
-    b3 = tf.keras.layers.Conv2D(256,3,padding='same',dilation_rate=18,use_bias=False)(layers[-1])
-    b3 = tf.keras.layers.BatchNormalization()(b3)
-    b3 = tf.keras.layers.Activation('relu')(b3)
-
-    x = tf.keras.layers.Concatenate()([b4,b0,b1,b2,b3])
-    x = tf.keras.layers.Conv2D(256,1,padding='same',use_bias=False)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Activation('relu')(x)
-    x = tf.keras.layers.UpSampling2D(size=(4,4), interpolation='bilinear')(x)
-
-    x = tf.keras.layers.Conv2D(1,(1,1))(x)
-    x = tf.keras.layers.Activation('sigmoid')(x)
-    x = tf.keras.layers.UpSampling2D(size=(8,8), interpolation='bilinear')(x)
-
-    return Model(inputs=base_model.input, outputs=x)
-
-# -------------------------
-# LOAD MODEL (FINAL FIX)
-# -------------------------
-def load_model_weights():
-    model = DeeplabV3()
-
-    # ✅ VERY IMPORTANT FIX (build model first)
-    model(np.zeros((1,256,256,3)))
-
-    model.load_weights(MODEL_PATH)
-    return model
-
-model = load_model_weights()
+model = load_model()
 
 # -------------------------
 # PREPROCESS
@@ -130,9 +39,11 @@ def preprocess(img):
     return np.expand_dims(img, axis=0)
 
 # -------------------------
-# MAIN
+# UI
 # -------------------------
-uploaded = st.file_uploader("📤 Upload Medical Image", type=["jpg","png","jpeg"])
+st.title("🧠 AI Polyp Risk Detection")
+
+uploaded = st.file_uploader("Upload Image", type=["jpg","png","jpeg"])
 
 if uploaded:
 
@@ -157,6 +68,7 @@ if uploaded:
         else:
             risk = "LOW RISK"
 
+        # Overlay
         mask_resized = cv2.resize(mask, (img_np.shape[1], img_np.shape[0]))
 
         overlay = img_np.copy()
@@ -164,38 +76,17 @@ if uploaded:
 
         blended = cv2.addWeighted(img_np, 0.7, overlay, 0.3, 0)
 
-        contours, _ = cv2.findContours(mask_resized.astype(np.uint8),
-                                       cv2.RETR_EXTERNAL,
-                                       cv2.CHAIN_APPROX_SIMPLE)
-        cv2.drawContours(blended, contours, -1, (0,255,0), 2)
-
     with col1:
-        st.image(image, caption="Original Image", width=400)
+        st.image(image, caption="Original Image")
 
     with col2:
-        st.image(blended, caption="AI Detection Output", width=400)
+        st.image(blended, caption="Detection Output")
 
-    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.write(f"Area: {relative_area*100:.2f}%")
+    st.write(f"Risk: {risk}")
 
-    c1, c2, c3 = st.columns(3)
-
-    c1.metric("📊 Relative Area (%)", f"{relative_area*100:.2f}%")
-    c2.metric("🧮 Pixels", int(pixels))
-    c3.metric("⚠️ Risk", risk)
-
-    if risk == "HIGH RISK":
-        st.error("⚠️ Immediate attention needed")
-    elif risk == "MODERATE RISK":
-        st.warning("⚠️ Moderate risk detected")
-    else:
-        st.success("✅ Low risk detected")
-
-    st.progress(min(relative_area, 1.0))
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    st.subheader("🧬 Segmentation Mask")
-    st.image(mask*255, width=400)
+    st.subheader("Segmentation Mask")
+    st.image(mask*255)
 
 # -------------------------
 # FOOTER

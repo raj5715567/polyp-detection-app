@@ -7,11 +7,40 @@ from tensorflow.keras.layers import Input
 from tensorflow.keras.models import Model
 import gdown
 import os
+import base64
 
 # -------------------------
 # CONFIG
 # -------------------------
 st.set_page_config(page_title="AI Polyp Detection", layout="wide")
+
+# -------------------------
+# UI STYLE
+# -------------------------
+st.markdown("""
+<style>
+.stApp {
+    background: linear-gradient(135deg, #141e30, #243b55);
+    color: white;
+}
+.title {
+    text-align: center;
+    font-size: 45px;
+    font-weight: bold;
+}
+.card {
+    padding: 25px;
+    border-radius: 20px;
+    background: rgba(255,255,255,0.08);
+    backdrop-filter: blur(15px);
+}
+.high { color: #ff4b5c; font-size: 24px; font-weight: bold; }
+.low { color: #00e676; font-size: 24px; font-weight: bold; }
+.medium { color: #ffd54f; font-size: 24px; font-weight: bold; }
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown('<div class="title">🧠 AI Polyp Risk Detection</div>', unsafe_allow_html=True)
 
 # -------------------------
 # DOWNLOAD MODEL
@@ -24,12 +53,12 @@ def download_model():
         gdown.download(url, WEIGHTS_PATH, quiet=False)
 
 # -------------------------
-# MODEL (EXACT FROM TRAINING)
+# MODEL (SAME AS YOUR FILE)
 # -------------------------
 def DeeplabV3(input_shape=(256,256,3)):
 
     base_model = tf.keras.applications.ResNet50(
-        weights='imagenet',   # IMPORTANT
+        weights='imagenet',   # 🔥 IMPORTANT FIX
         include_top=False,
         input_tensor=Input(shape=input_shape)
     )
@@ -73,19 +102,19 @@ def DeeplabV3(input_shape=(256,256,3)):
     return Model(inputs=base_model.input, outputs=x)
 
 # -------------------------
-# LOAD MODEL (CORRECT WAY)
+# LOAD MODEL (FIXED)
 # -------------------------
 @st.cache_resource
-def load_model():
+def load_model_weights():
     download_model()
     model = DeeplabV3()
 
-    # 🔥 IMPORTANT FIX
-    model.load_weights(WEIGHTS_PATH, by_name=True, skip_mismatch=True)
+    # 🔥 STRICT LOAD (NO SKIP)
+    model.load_weights(WEIGHTS_PATH)
 
     return model
 
-model = load_model()
+model = load_model_weights()
 
 # -------------------------
 # PREPROCESS
@@ -93,21 +122,115 @@ model = load_model()
 def preprocess(img):
     img = img.resize((256,256))
     img = np.array(img)/255.0
-    return np.expand_dims(img,0)
+    return np.expand_dims(img, axis=0)
 
 # -------------------------
 # UI
 # -------------------------
-st.title("🧠 AI Polyp Detection")
-
-uploaded = st.file_uploader("Upload Image", type=["jpg","png","jpeg"])
+uploaded = st.file_uploader("📤 Upload Medical Image", type=["jpg","png","jpeg"])
 
 if uploaded:
+
     image = Image.open(uploaded).convert("RGB")
     img_np = np.array(image)
 
-    pred = model.predict(preprocess(image))
-    mask = (pred > 0.5).astype(np.uint8).squeeze()
+    col1, col2 = st.columns(2)
 
-    st.image(image, caption="Original")
-    st.image(mask*255, caption="Mask")
+    with st.spinner("🔍 AI Analyzing..."):
+
+        pred = model.predict(preprocess(image))
+        mask = (pred > 0.5).astype(np.uint8).squeeze()
+
+        pixels = np.sum(mask)
+
+        # -------------------------
+        # OLD METHOD (COMMENTED)
+        # -------------------------
+        # area = pixels / (pixel_per_cm**2)
+        # risk = "HIGH RISK" if area > threshold_cm2 else "LOW RISK"
+
+        # -------------------------
+        # NEW METHOD (RELATIVE AREA)
+        # -------------------------
+        total_pixels = mask.shape[0] * mask.shape[1]
+        relative_area = pixels / total_pixels
+
+        if relative_area > 0.15:
+            risk = "HIGH RISK"
+        elif relative_area > 0.05:
+            risk = "MODERATE RISK"
+        else:
+            risk = "LOW RISK"
+
+        # -------------------------
+        # VISUALIZATION
+        # -------------------------
+        mask_resized = cv2.resize(mask, (img_np.shape[1], img_np.shape[0]))
+
+        overlay = img_np.copy()
+        overlay[mask_resized==1] = [255,0,0]
+
+        blended = cv2.addWeighted(img_np,0.7,overlay,0.3,0)
+
+        contours,_ = cv2.findContours(mask_resized.astype(np.uint8),
+                                      cv2.RETR_EXTERNAL,
+                                      cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(blended,contours,-1,(0,255,0),2)
+
+    # -------------------------
+    # DISPLAY IMAGES
+    # -------------------------
+    with col1:
+        st.image(image, caption="Original Image", width=400)
+
+    with col2:
+        st.image(blended, caption="AI Detection Output", width=400)
+
+    # -------------------------
+    # RESULTS CARD
+    # -------------------------
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+
+    c1, c2, c3 = st.columns(3)
+
+    c1.metric("📊 Relative Area (%)", f"{relative_area*100:.2f}%")
+    c2.metric("🧮 Pixels", int(pixels))
+    c3.metric("⚠️ Risk", risk)
+
+    if risk == "HIGH RISK":
+        st.markdown('<p class="high">⚠️ Immediate attention needed</p>', unsafe_allow_html=True)
+    elif risk == "MODERATE RISK":
+        st.markdown('<p class="medium">⚠️ Moderate risk detected</p>', unsafe_allow_html=True)
+    else:
+        st.markdown('<p class="low">✅ Low risk detected</p>', unsafe_allow_html=True)
+
+    st.progress(min(relative_area,1.0))
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # -------------------------
+    # DOWNLOAD REPORT
+    # -------------------------
+    report = f"""
+Polyp Detection Report
+
+Relative Area: {relative_area*100:.2f} %
+Pixels: {pixels}
+Risk Level: {risk}
+"""
+
+    b64 = base64.b64encode(report.encode()).decode()
+    href = f'<a href="data:file/txt;base64,{b64}" download="report.txt">📥 Download Report</a>'
+    st.markdown(href, unsafe_allow_html=True)
+
+    # -------------------------
+    # MASK
+    # -------------------------
+    st.subheader("🧬 Segmentation Mask")
+    st.image(mask*255, width=400)
+
+# -------------------------
+# FOOTER
+# -------------------------
+st.markdown("---")
+st.markdown("🚀 Final Year Project • AI Medical Assistant")

@@ -7,8 +7,8 @@ from tensorflow.keras.layers import Input
 from tensorflow.keras.models import Model
 import base64
 import os
-from huggingface_hub import hf_hub_download
-import shutil
+import requests
+import h5py
 
 # -------------------------
 # CONFIG
@@ -16,34 +16,39 @@ import shutil
 st.set_page_config(page_title="AI Polyp Detection", layout="wide")
 
 MODEL_PATH = "model.weights.h5"
+MODEL_URL = "https://huggingface.co/raj571556/model.weights.h5/resolve/main/model.weights.h5?download=true"
 
 # -------------------------
-# DOWNLOAD MODEL (ONLY ADDITION)
+# DOWNLOAD + VERIFY MODEL
 # -------------------------
-from huggingface_hub import hf_hub_download
-import shutil
-
-import requests
-
 def download_model():
-    if not os.path.exists(MODEL_PATH):
+    
+    # 🔥 FORCE CLEAN DOWNLOAD
+    if os.path.exists(MODEL_PATH):
+        os.remove(MODEL_PATH)
 
-        url = "https://huggingface.co/raj571556/model.weights.h5/resolve/main/model.weights.h5?download=true"
+    with st.spinner("📥 Downloading AI Model..."):
+        r = requests.get(MODEL_URL, stream=True)
 
-        with st.spinner("📥 Downloading AI Model..."):
-            r = requests.get(url, stream=True)
+        with open(MODEL_PATH, "wb") as f:
+            for chunk in r.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    f.write(chunk)
 
-            with open(MODEL_PATH, "wb") as f:
-                for chunk in r.iter_content(chunk_size=1024 * 1024):
-                    if chunk:
-                        f.write(chunk)
+    # ✅ SIZE CHECK
+    size = os.path.getsize(MODEL_PATH) / (1024 * 1024)
+    st.write(f"Downloaded size: {size:.2f} MB")
 
-        # ✅ verify
-        size = os.path.getsize(MODEL_PATH) / (1024*1024)
-        st.write(f"Downloaded size: {size:.2f} MB")
+    # ❗ CRITICAL: VERIFY FILE INTEGRITY
+    try:
+        with h5py.File(MODEL_PATH, "r") as f:
+            st.write("✅ Model file is valid")
+    except:
+        st.error("❌ Model file corrupted. Please redeploy.")
+        st.stop()
 
 # -------------------------
-# UI STYLE (UNCHANGED)
+# UI STYLE
 # -------------------------
 st.markdown("""
 <style>
@@ -74,7 +79,7 @@ img {
 st.markdown('<div class="title">🧠 AI Polyp Risk Detection</div>', unsafe_allow_html=True)
 
 # -------------------------
-# MODEL (EXACT SAME)
+# MODEL (UNCHANGED)
 # -------------------------
 def DeeplabV3(input_shape=(256,256,3), num_classes=1):
 
@@ -123,20 +128,121 @@ def DeeplabV3(input_shape=(256,256,3), num_classes=1):
     return Model(inputs=base_model.input, outputs=x)
 
 # -------------------------
-# LOAD MODEL (EXACT SAME + BUILD FIX)
+# LOAD MODEL
 # -------------------------
-@st.cache_resource
 def load_model_weights():
+
     download_model()
 
     model = DeeplabV3()
 
-    # IMPORTANT: build model (cloud fix)
+    # ✅ BUILD MODEL
     model(np.zeros((1,256,256,3)))
 
-    # STRICT loading (same as your local)
+    # ✅ STRICT LOAD (NO mismatch tricks)
     model.load_weights(MODEL_PATH)
 
     return model
 
-model = load_model_weights()
+# -------------------------
+# LOAD MODEL
+# -------------------------
+try:
+    model = load_model_weights()
+except Exception as e:
+    st.error(f"❌ Model loading failed: {e}")
+    st.stop()
+
+# -------------------------
+# PREPROCESS
+# -------------------------
+def preprocess(img):
+    img = img.resize((256,256))
+    img = np.array(img)/255.0
+    return np.expand_dims(img, axis=0)
+
+# -------------------------
+# UI
+# -------------------------
+uploaded = st.file_uploader("📤 Upload Medical Image", type=["jpg","png","jpeg"])
+
+if uploaded:
+
+    image = Image.open(uploaded).convert("RGB")
+    img_np = np.array(image)
+
+    col1, col2 = st.columns(2)
+
+    with st.spinner("🔍 AI Analyzing..."):
+
+        pred = model.predict(preprocess(image))
+        mask = (pred > 0.5).astype(np.uint8).squeeze()
+
+        pixels = np.sum(mask)
+        total_pixels = mask.shape[0] * mask.shape[1]
+        relative_area = pixels / total_pixels
+
+        if relative_area > 0.15:
+            risk = "HIGH RISK"
+        elif relative_area > 0.05:
+            risk = "MODERATE RISK"
+        else:
+            risk = "LOW RISK"
+
+        mask_resized = cv2.resize(mask, (img_np.shape[1], img_np.shape[0]))
+
+        overlay = img_np.copy()
+        overlay[mask_resized==1] = [255,0,0]
+
+        blended = cv2.addWeighted(img_np,0.7,overlay,0.3,0)
+
+        contours,_ = cv2.findContours(mask_resized.astype(np.uint8),
+                                      cv2.RETR_EXTERNAL,
+                                      cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(blended,contours,-1,(0,255,0),2)
+
+    with col1:
+        st.image(image, caption="Original Image", width=400)
+
+    with col2:
+        st.image(blended, caption="AI Detection Output", width=400)
+
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+
+    c1, c2, c3 = st.columns(3)
+
+    c1.metric("📊 Relative Area (%)", f"{relative_area*100:.2f}%")
+    c2.metric("🧮 Pixels", int(pixels))
+    c3.metric("⚠️ Risk", risk)
+
+    if risk == "HIGH RISK":
+        st.markdown('<p class="high">⚠️ Immediate attention needed</p>', unsafe_allow_html=True)
+    elif risk == "MODERATE RISK":
+        st.markdown('<p class="medium">⚠️ Moderate risk detected</p>', unsafe_allow_html=True)
+    else:
+        st.markdown('<p class="low">✅ Low risk detected</p>', unsafe_allow_html=True)
+
+    st.progress(min(relative_area,1.0))
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    report = f"""
+Polyp Detection Report
+
+Relative Area: {relative_area*100:.2f} %
+Pixels: {pixels}
+Risk Level: {risk}
+"""
+
+    b64 = base64.b64encode(report.encode()).decode()
+    href = f'<a href="data:file/txt;base64,{b64}" download="report.txt">📥 Download Report</a>'
+    st.markdown(href, unsafe_allow_html=True)
+
+    st.subheader("🧬 Segmentation Mask")
+    st.image(mask*255, width=400)
+
+# -------------------------
+# FOOTER
+# -------------------------
+st.markdown("---")
+st.markdown("🚀 Final Year Project • AI Medical Assistant")

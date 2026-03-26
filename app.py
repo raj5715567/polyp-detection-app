@@ -6,7 +6,6 @@ import tensorflow as tf
 import base64
 import os
 import gdown
-import h5py
 
 # -------------------------
 # CONFIG
@@ -16,7 +15,7 @@ st.set_page_config(page_title="AI Polyp Detection", layout="wide")
 MODEL_PATH = "model.keras"
 
 # -------------------------
-# DOWNLOAD MODEL (FIXED)
+# DOWNLOAD MODEL (FINAL FIX)
 # -------------------------
 def download_model():
     if not os.path.exists(MODEL_PATH):
@@ -24,19 +23,14 @@ def download_model():
         url = "https://drive.google.com/uc?id=1IDbuJqZ5way9b1TPk-W7tTp8iYKUbTJ-"
 
         with st.spinner("📥 Downloading model..."):
-            gdown.download(
-                url,
-                MODEL_PATH,
-                quiet=False,
-                fuzzy=True   # 🔥 IMPORTANT
-            )
+            gdown.download(url, MODEL_PATH, quiet=False, fuzzy=True)
 
-        # ✅ VERIFY FILE
-        try:
-            with h5py.File(MODEL_PATH, "r") as f:
-                st.write("✅ Model file valid")
-        except:
-            st.error("❌ Invalid model file (download failed)")
+        # ✅ SIZE CHECK (NO h5py for .keras)
+        size = os.path.getsize(MODEL_PATH) / (1024 * 1024)
+        st.write(f"Downloaded size: {size:.2f} MB")
+
+        if size < 300:  # expected ~470MB
+            st.error("❌ Model file corrupted")
             os.remove(MODEL_PATH)
             st.stop()
 
@@ -58,7 +52,7 @@ except Exception as e:
     st.stop()
 
 # -------------------------
-# UI STYLE (UNCHANGED)
+# UI STYLE
 # -------------------------
 st.markdown("""
 <style>
@@ -92,14 +86,14 @@ st.markdown('<div class="title">🧠 AI Polyp Risk Detection</div>', unsafe_allo
 # PREPROCESS
 # -------------------------
 def preprocess(img):
-    img = img.resize((256,256))
-    img = np.array(img)/255.0
+    img = img.resize((256, 256))
+    img = np.array(img) / 255.0
     return np.expand_dims(img, axis=0)
 
 # -------------------------
-# UPLOAD
+# FILE UPLOAD
 # -------------------------
-uploaded = st.file_uploader("📤 Upload Medical Image", type=["jpg","png","jpeg"])
+uploaded = st.file_uploader("📤 Upload Medical Image", type=["jpg", "png", "jpeg"])
 
 if uploaded:
 
@@ -164,7 +158,7 @@ if uploaded:
     else:
         st.markdown('<p class="low">✅ Low risk detected</p>', unsafe_allow_html=True)
 
-    st.progress(min(relative_area,1.0))
+    st.progress(min(relative_area, 1.0))
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -187,7 +181,7 @@ Risk Level: {risk}
     # MASK
     # -------------------------
     st.subheader("🧬 Segmentation Mask")
-    st.image(mask*255, width=400)
+    st.image(mask * 255, width=400)
 
 # -------------------------
 # FOOTER

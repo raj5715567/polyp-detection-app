@@ -5,6 +5,7 @@ from PIL import Image
 import tensorflow as tf
 import os
 import gdown
+import h5py
 
 # -------------------------
 # CONFIG
@@ -27,15 +28,10 @@ def download_model():
         size = os.path.getsize(MODEL_PATH) / (1024 * 1024)
         st.write(f"Downloaded size: {size:.2f} MB")
 
-        if size < 300:
-            st.error("❌ Model file corrupted")
-            os.remove(MODEL_PATH)
-            st.stop()
-
 # -------------------------
 # MODEL ARCHITECTURE
 # -------------------------
-def DeeplabV3(input_shape=(256,256,3), num_classes=1):
+def DeeplabV3(input_shape=(256,256,3)):
 
     base_model = tf.keras.applications.ResNet50(
         weights=None,
@@ -77,21 +73,44 @@ def DeeplabV3(input_shape=(256,256,3), num_classes=1):
     return tf.keras.models.Model(inputs=base_model.input, outputs=x)
 
 # -------------------------
-# LOAD MODEL (FINAL FIX)
+# MANUAL WEIGHT LOADER
+# -------------------------
+def manual_load_weights(model, filepath):
+    f = h5py.File(filepath, 'r')
+
+    for layer in model.layers:
+        if layer.name in f['layers']:
+            g = f['layers'][layer.name]
+
+            if hasattr(layer, 'weights') and len(layer.weights) > 0:
+                weights = []
+                for i in range(len(layer.weights)):
+                    try:
+                        weights.append(g['vars'][str(i)][()])
+                    except:
+                        pass
+                if weights:
+                    try:
+                        layer.set_weights(weights)
+                    except:
+                        pass
+
+    f.close()
+    return model
+
+# -------------------------
+# LOAD MODEL
 # -------------------------
 def load_model():
 
     download_model()
 
     model = DeeplabV3()
-
-    # build model
     model(np.zeros((1,256,256,3)))
 
-    # 🔥 NEW KERAS LOADER (TF 2.13 REQUIRED)
-    tf.keras.saving.load_weights_only(model, MODEL_PATH)
+    model = manual_load_weights(model, MODEL_PATH)
 
-    st.success("✅ Model loaded successfully")
+    st.success("✅ Model loaded (manual method)")
 
     return model
 

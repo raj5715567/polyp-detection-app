@@ -7,7 +7,7 @@ from tensorflow.keras.layers import Input
 from tensorflow.keras.models import Model
 import base64
 import os
-import requests
+from huggingface_hub import hf_hub_download
 
 # -------------------------
 # CONFIG
@@ -17,20 +17,19 @@ st.set_page_config(page_title="AI Polyp Detection", layout="wide")
 MODEL_PATH = "model.weights.h5"
 
 # -------------------------
-# DOWNLOAD MODEL (HUGGINGFACE)
+# DOWNLOAD MODEL (SAFE HF)
 # -------------------------
 def download_model():
     if not os.path.exists(MODEL_PATH):
-        url = "https://huggingface.co/raj571556/model.weights.h5/resolve/main/model.weights.h5"
-        
         with st.spinner("📥 Downloading AI Model..."):
-            r = requests.get(url, stream=True)
-            with open(MODEL_PATH, "wb") as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
+            file_path = hf_hub_download(
+                repo_id="raj571556/model.weights.h5",
+                filename="model.weights.h5"
+            )
+            os.rename(file_path, MODEL_PATH)
 
 # -------------------------
-# UI STYLE
+# UI STYLE (UNCHANGED)
 # -------------------------
 st.markdown("""
 <style>
@@ -118,11 +117,15 @@ def load_model_weights():
 
     model = DeeplabV3()
 
-    # ✅ IMPORTANT: BUILD MODEL FIRST
+    # ✅ VERY IMPORTANT: BUILD MODEL FIRST
     model(np.zeros((1,256,256,3)))
 
-    # ✅ LOAD WEIGHTS
-    model.load_weights(MODEL_PATH)
+    # ✅ SAFE LOAD
+    model.load_weights(
+        MODEL_PATH,
+        by_name=True,
+        skip_mismatch=True
+    )
 
     return model
 

@@ -5,7 +5,6 @@ from PIL import Image
 import tensorflow as tf
 import os
 import gdown
-import h5py
 
 # -------------------------
 # CONFIG
@@ -24,9 +23,6 @@ def download_model():
 
         with st.spinner("📥 Downloading model..."):
             gdown.download(url, MODEL_PATH, quiet=False, fuzzy=True)
-
-        size = os.path.getsize(MODEL_PATH) / (1024 * 1024)
-        st.write(f"Downloaded size: {size:.2f} MB")
 
 # -------------------------
 # MODEL ARCHITECTURE
@@ -53,9 +49,7 @@ def DeeplabV3(input_shape=(256,256,3)):
     b4 = tf.keras.layers.GlobalAveragePooling2D()(layers[-1])
     b4 = tf.keras.layers.Reshape((1,1,b4.shape[-1]))(b4)
     b4 = conv_block(b4, 256)
-    b4 = tf.keras.layers.UpSampling2D(
-        size=(layers[-1].shape[1], layers[-1].shape[2]),
-        interpolation='bilinear')(b4)
+    b4 = tf.keras.layers.UpSampling2D(size=(layers[-1].shape[1], layers[-1].shape[2]), interpolation='bilinear')(b4)
 
     b0 = conv_block(layers[-1], 256)
     b1 = conv_block(layers[-1], 256, 6)
@@ -73,33 +67,7 @@ def DeeplabV3(input_shape=(256,256,3)):
     return tf.keras.models.Model(inputs=base_model.input, outputs=x)
 
 # -------------------------
-# MANUAL WEIGHT LOADER
-# -------------------------
-def manual_load_weights(model, filepath):
-    f = h5py.File(filepath, 'r')
-
-    for layer in model.layers:
-        if layer.name in f['layers']:
-            g = f['layers'][layer.name]
-
-            if hasattr(layer, 'weights') and len(layer.weights) > 0:
-                weights = []
-                for i in range(len(layer.weights)):
-                    try:
-                        weights.append(g['vars'][str(i)][()])
-                    except:
-                        pass
-                if weights:
-                    try:
-                        layer.set_weights(weights)
-                    except:
-                        pass
-
-    f.close()
-    return model
-
-# -------------------------
-# LOAD MODEL
+# LOAD MODEL (FINAL CORRECT)
 # -------------------------
 def load_model():
 
@@ -108,20 +76,17 @@ def load_model():
     model = DeeplabV3()
     model(np.zeros((1,256,256,3)))
 
-    model = manual_load_weights(model, MODEL_PATH)
+    # 🔥 CORRECT METHOD (TF 2.13)
+    tf.keras.saving.load_weights_only(model, MODEL_PATH)
 
-    st.success("✅ Model loaded (manual method)")
+    st.success("✅ Model loaded correctly")
 
     return model
 
 # -------------------------
 # INIT MODEL
 # -------------------------
-try:
-    model = load_model()
-except Exception as e:
-    st.error(f"❌ Model loading failed: {e}")
-    st.stop()
+model = load_model()
 
 # -------------------------
 # PREPROCESS
@@ -143,31 +108,9 @@ if uploaded:
     image = Image.open(uploaded).convert("RGB")
     img_np = np.array(image)
 
-    col1, col2 = st.columns(2)
+    st.image(image, caption="Original")
 
-    with st.spinner("🔍 AI Analyzing..."):
+    pred = model.predict(preprocess(image))
+    mask = (pred > 0.5).astype(np.uint8).squeeze()
 
-        pred = model.predict(preprocess(image))
-        mask = (pred > 0.5).astype(np.uint8).squeeze()
-
-        mask_resized = cv2.resize(mask, (img_np.shape[1], img_np.shape[0]))
-
-        overlay = img_np.copy()
-        overlay[mask_resized == 1] = [255,0,0]
-
-        blended = cv2.addWeighted(img_np,0.7,overlay,0.3,0)
-
-    with col1:
-        st.image(image, caption="Original")
-
-    with col2:
-        st.image(blended, caption="Detection")
-
-    st.subheader("Mask")
-    st.image(mask*255)
-
-# -------------------------
-# FOOTER
-# -------------------------
-st.markdown("---")
-st.markdown("🚀 Final Year Project")
+    st.image(mask*255, caption="Prediction")

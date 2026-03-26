@@ -6,7 +6,7 @@ import tensorflow as tf
 from tensorflow.keras.layers import Input
 from tensorflow.keras.models import Model
 import os
-import requests
+import gdown
 import base64
 
 # -------------------------
@@ -15,50 +15,15 @@ import base64
 st.set_page_config(page_title="AI Polyp Detection", layout="wide")
 
 # -------------------------
-# UI STYLE
-# -------------------------
-st.markdown("""
-<style>
-.stApp {
-    background: linear-gradient(135deg, #141e30, #243b55);
-    color: white;
-}
-.title {
-    text-align: center;
-    font-size: 45px;
-    font-weight: bold;
-}
-.card {
-    padding: 25px;
-    border-radius: 20px;
-    background: rgba(255,255,255,0.08);
-    backdrop-filter: blur(15px);
-}
-.high { color: #ff4b5c; font-size: 24px; font-weight: bold; }
-.low { color: #00e676; font-size: 24px; font-weight: bold; }
-.medium { color: #ffd54f; font-size: 24px; font-weight: bold; }
-img {
-    border-radius: 15px;
-}
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown('<div class="title">🧠 AI Polyp Risk Detection</div>', unsafe_allow_html=True)
-
-# -------------------------
-# DOWNLOAD MODEL (FIXED)
+# DOWNLOAD MODEL (FINAL FIX)
 # -------------------------
 WEIGHTS_PATH = "model.weights.h5"
 
 def download_model():
     if not os.path.exists(WEIGHTS_PATH):
-        url = "https://drive.google.com/uc?export=download&id=1JCO8bi5W1RPUu6xJKVp3m0D-e02cZhrp"
         with st.spinner("Downloading AI model... ⏳"):
-            r = requests.get(url, stream=True)
-            with open(WEIGHTS_PATH, "wb") as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
+            url = "https://drive.google.com/file/d/1JCO8bi5W1RPUu6xJKVp3m0D-e02cZhrp/view"
+            gdown.download(url, WEIGHTS_PATH, fuzzy=True)
 
 # -------------------------
 # MODEL ARCHITECTURE
@@ -130,89 +95,26 @@ def preprocess(img):
     return np.expand_dims(img, axis=0)
 
 # -------------------------
-# UPLOAD
+# UI
 # -------------------------
-uploaded = st.file_uploader("📤 Upload Medical Image", type=["jpg","png","jpeg"])
+st.title("🧠 AI Polyp Detection")
+
+uploaded = st.file_uploader("Upload Image", type=["jpg","png","jpeg"])
 
 if uploaded:
-
     image = Image.open(uploaded).convert("RGB")
     img_np = np.array(image)
 
-    col1, col2 = st.columns(2)
+    pred = model.predict(preprocess(image))
+    mask = (pred > 0.5).astype(np.uint8).squeeze()
 
-    with st.spinner("🔍 AI Analyzing..."):
+    mask_resized = cv2.resize(mask, (img_np.shape[1], img_np.shape[0]))
 
-        pred = model.predict(preprocess(image))
-        mask = (pred > 0.5).astype(np.uint8).squeeze()
+    overlay = img_np.copy()
+    overlay[mask_resized==1] = [255,0,0]
 
-        pixels = np.sum(mask)
+    blended = cv2.addWeighted(img_np,0.7,overlay,0.3,0)
 
-        # ✅ NEW METHOD (RELATIVE AREA)
-        total_pixels = mask.shape[0] * mask.shape[1]
-        relative_area = pixels / total_pixels
-
-        if relative_area > 0.15:
-            risk = "HIGH RISK"
-        elif relative_area > 0.05:
-            risk = "MODERATE RISK"
-        else:
-            risk = "LOW RISK"
-
-        # VISUALIZATION
-        mask_resized = cv2.resize(mask, (img_np.shape[1], img_np.shape[0]))
-
-        overlay = img_np.copy()
-        overlay[mask_resized==1] = [255,0,0]
-
-        blended = cv2.addWeighted(img_np,0.7,overlay,0.3,0)
-
-        contours,_ = cv2.findContours(mask_resized.astype(np.uint8),
-                                      cv2.RETR_EXTERNAL,
-                                      cv2.CHAIN_APPROX_SIMPLE)
-        cv2.drawContours(blended,contours,-1,(0,255,0),2)
-
-    with col1:
-        st.image(image, caption="Original Image", width=400)
-
-    with col2:
-        st.image(blended, caption="AI Detection Output", width=400)
-
-    # RESULTS
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-
-    c1, c2, c3 = st.columns(3)
-
-    c1.metric("📊 Relative Area (%)", f"{relative_area*100:.2f}%")
-    c2.metric("🧮 Pixels", int(pixels))
-    c3.metric("⚠️ Risk", risk)
-
-    if risk == "HIGH RISK":
-        st.markdown('<p class="high">⚠️ Immediate attention needed</p>', unsafe_allow_html=True)
-    elif risk == "MODERATE RISK":
-        st.markdown('<p class="medium">⚠️ Moderate risk detected</p>', unsafe_allow_html=True)
-    else:
-        st.markdown('<p class="low">✅ Low risk detected</p>', unsafe_allow_html=True)
-
-    st.progress(min(relative_area,1.0))
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # DOWNLOAD REPORT
-    report = f"""
-Polyp Detection Report
-
-Relative Area: {relative_area*100:.2f} %
-Pixels: {pixels}
-Risk Level: {risk}
-"""
-
-    b64 = base64.b64encode(report.encode()).decode()
-    href = f'<a href="data:file/txt;base64,{b64}" download="report.txt">📥 Download Report</a>'
-    st.markdown(href, unsafe_allow_html=True)
-
-    st.subheader("🧬 Segmentation Mask")
-    st.image(mask*255, width=400)
-
-st.markdown("---")
-st.markdown("🚀 Final Year Project • AI Medical Assistant")
+    st.image(image, caption="Original")
+    st.image(blended, caption="Prediction")
+    st.image(mask*255, caption="Mask")

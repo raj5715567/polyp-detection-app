@@ -3,4 +3,4 @@ numpy==1.23.5
 opencv-python-headless
 pillow
 tensorflow-cpu==2.13.0
-requests
+gdown

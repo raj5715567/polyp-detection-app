@@ -27,6 +27,11 @@ def download_model():
         size = os.path.getsize(MODEL_PATH) / (1024 * 1024)
         st.write(f"Downloaded size: {size:.2f} MB")
 
+        if size < 300:
+            st.error("❌ Model file corrupted")
+            os.remove(MODEL_PATH)
+            st.stop()
+
 # -------------------------
 # MODEL ARCHITECTURE
 # -------------------------
@@ -52,7 +57,9 @@ def DeeplabV3(input_shape=(256,256,3), num_classes=1):
     b4 = tf.keras.layers.GlobalAveragePooling2D()(layers[-1])
     b4 = tf.keras.layers.Reshape((1,1,b4.shape[-1]))(b4)
     b4 = conv_block(b4, 256)
-    b4 = tf.keras.layers.UpSampling2D(size=(layers[-1].shape[1], layers[-1].shape[2]), interpolation='bilinear')(b4)
+    b4 = tf.keras.layers.UpSampling2D(
+        size=(layers[-1].shape[1], layers[-1].shape[2]),
+        interpolation='bilinear')(b4)
 
     b0 = conv_block(layers[-1], 256)
     b1 = conv_block(layers[-1], 256, 6)
@@ -81,7 +88,7 @@ def load_model():
     # build model
     model(np.zeros((1,256,256,3)))
 
-    # 🔥 THIS IS THE KEY FIX
+    # 🔥 NEW KERAS LOADER (TF 2.13 REQUIRED)
     tf.keras.saving.load_weights_only(model, MODEL_PATH)
 
     st.success("✅ Model loaded successfully")
@@ -117,9 +124,31 @@ if uploaded:
     image = Image.open(uploaded).convert("RGB")
     img_np = np.array(image)
 
-    st.image(image, caption="Original")
+    col1, col2 = st.columns(2)
 
-    pred = model.predict(preprocess(image))
-    mask = (pred > 0.5).astype(np.uint8).squeeze()
+    with st.spinner("🔍 AI Analyzing..."):
 
-    st.image(mask*255, caption="Mask")
+        pred = model.predict(preprocess(image))
+        mask = (pred > 0.5).astype(np.uint8).squeeze()
+
+        mask_resized = cv2.resize(mask, (img_np.shape[1], img_np.shape[0]))
+
+        overlay = img_np.copy()
+        overlay[mask_resized == 1] = [255,0,0]
+
+        blended = cv2.addWeighted(img_np,0.7,overlay,0.3,0)
+
+    with col1:
+        st.image(image, caption="Original")
+
+    with col2:
+        st.image(blended, caption="Detection")
+
+    st.subheader("Mask")
+    st.image(mask*255)
+
+# -------------------------
+# FOOTER
+# -------------------------
+st.markdown("---")
+st.markdown("🚀 Final Year Project")

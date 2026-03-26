@@ -3,7 +3,6 @@ import numpy as np
 import cv2
 from PIL import Image
 import tensorflow as tf
-import base64
 import os
 import gdown
 
@@ -27,11 +26,6 @@ def download_model():
 
         size = os.path.getsize(MODEL_PATH) / (1024 * 1024)
         st.write(f"Downloaded size: {size:.2f} MB")
-
-        if size < 300:
-            st.error("❌ Model file corrupted")
-            os.remove(MODEL_PATH)
-            st.stop()
 
 # -------------------------
 # MODEL ARCHITECTURE
@@ -76,78 +70,32 @@ def DeeplabV3(input_shape=(256,256,3), num_classes=1):
     return tf.keras.models.Model(inputs=base_model.input, outputs=x)
 
 # -------------------------
-# SMART MODEL LOADER
+# LOAD MODEL (FINAL FIX)
 # -------------------------
 def load_model():
 
     download_model()
 
-    # 🔁 TRY 1: FULL MODEL
-    try:
-        st.write("🔄 Trying full model load...")
-        model = tf.keras.models.load_model(MODEL_PATH, compile=False)
-        st.success("✅ Loaded as FULL model")
-        return model
-    except Exception as e:
-        st.warning(f"❌ Full model failed: {e}")
+    model = DeeplabV3()
 
-    # 🔁 TRY 2: STRICT WEIGHTS
-    try:
-        st.write("🔄 Trying strict weights load...")
-        model = DeeplabV3()
-        model(np.zeros((1,256,256,3)))
-        model.load_weights(MODEL_PATH)
-        st.success("✅ Loaded as WEIGHTS (strict)")
-        return model
-    except Exception as e:
-        st.warning(f"❌ Strict weights failed: {e}")
+    # build model
+    model(np.zeros((1,256,256,3)))
 
-    # 🔁 TRY 3: FLEXIBLE WEIGHTS
-    try:
-        st.write("🔄 Trying flexible weights load...")
-        model = DeeplabV3()
-        model(np.zeros((1,256,256,3)))
-        model.load_weights(MODEL_PATH, by_name=True, skip_mismatch=True)
-        st.success("⚠️ Loaded with partial weights")
-        return model
-    except Exception as e:
-        st.warning(f"❌ Flexible weights failed: {e}")
+    # 🔥 THIS IS THE KEY FIX
+    tf.keras.saving.load_weights_only(model, MODEL_PATH)
 
-    # ❌ FINAL FAIL
-    st.error("🚨 All loading methods failed")
+    st.success("✅ Model loaded successfully")
+
+    return model
+
+# -------------------------
+# INIT MODEL
+# -------------------------
+try:
+    model = load_model()
+except Exception as e:
+    st.error(f"❌ Model loading failed: {e}")
     st.stop()
-
-# -------------------------
-# LOAD MODEL
-# -------------------------
-model = load_model()
-
-# -------------------------
-# UI STYLE
-# -------------------------
-st.markdown("""
-<style>
-.stApp {
-    background: linear-gradient(135deg, #141e30, #243b55);
-    color: white;
-}
-.title {
-    text-align: center;
-    font-size: 45px;
-    font-weight: bold;
-}
-.card {
-    padding: 25px;
-    border-radius: 20px;
-    background: rgba(255,255,255,0.08);
-}
-.high { color: #ff4b5c; font-size: 24px; }
-.medium { color: #ffd54f; font-size: 24px; }
-.low { color: #00e676; font-size: 24px; }
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown('<div class="title">🧠 AI Polyp Risk Detection</div>', unsafe_allow_html=True)
 
 # -------------------------
 # PREPROCESS
@@ -158,59 +106,20 @@ def preprocess(img):
     return np.expand_dims(img, axis=0)
 
 # -------------------------
-# UPLOAD
+# UI
 # -------------------------
-uploaded = st.file_uploader("📤 Upload Image", type=["jpg","png","jpeg"])
+st.title("🧠 AI Polyp Detection")
+
+uploaded = st.file_uploader("Upload Image", type=["jpg","png","jpeg"])
 
 if uploaded:
 
     image = Image.open(uploaded).convert("RGB")
     img_np = np.array(image)
 
-    col1, col2 = st.columns(2)
+    st.image(image, caption="Original")
 
-    with st.spinner("🔍 AI Analyzing..."):
+    pred = model.predict(preprocess(image))
+    mask = (pred > 0.5).astype(np.uint8).squeeze()
 
-        pred = model.predict(preprocess(image))
-        mask = (pred > 0.5).astype(np.uint8).squeeze()
-
-        pixels = np.sum(mask)
-        total_pixels = mask.size
-        relative_area = pixels / total_pixels
-
-        if relative_area > 0.15:
-            risk = "HIGH RISK"
-        elif relative_area > 0.05:
-            risk = "MODERATE RISK"
-        else:
-            risk = "LOW RISK"
-
-        mask_resized = cv2.resize(mask, (img_np.shape[1], img_np.shape[0]))
-
-        overlay = img_np.copy()
-        overlay[mask_resized == 1] = [255,0,0]
-
-        blended = cv2.addWeighted(img_np,0.7,overlay,0.3,0)
-
-        contours,_ = cv2.findContours(mask_resized.astype(np.uint8),
-                                      cv2.RETR_EXTERNAL,
-                                      cv2.CHAIN_APPROX_SIMPLE)
-        cv2.drawContours(blended,contours,-1,(0,255,0),2)
-
-    with col1:
-        st.image(image, caption="Original Image")
-
-    with col2:
-        st.image(blended, caption="AI Output")
-
-    st.metric("Risk", risk)
-    st.metric("Area %", f"{relative_area*100:.2f}")
-
-    st.subheader("Mask")
-    st.image(mask*255)
-
-# -------------------------
-# FOOTER
-# -------------------------
-st.markdown("---")
-st.markdown("🚀 Final Year Project")
+    st.image(mask*255, caption="Mask")

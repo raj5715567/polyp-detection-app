@@ -20,8 +20,12 @@ MODEL_PATH = "model.weights.h5"
 # -------------------------
 # DOWNLOAD MODEL (ONLY ADDITION)
 # -------------------------
+from huggingface_hub import hf_hub_download
+import shutil
+
 def download_model():
     if not os.path.exists(MODEL_PATH):
+
         with st.spinner("📥 Downloading AI Model..."):
 
             file_path = hf_hub_download(
@@ -30,6 +34,14 @@ def download_model():
             )
 
             shutil.copy(file_path, MODEL_PATH)
+
+        # ✅ CRITICAL CHECK
+        size = os.path.getsize(MODEL_PATH) / (1024 * 1024)
+        st.write(f"Model size: {size:.2f} MB")
+
+        if size < 100:   # your file should be ~470MB
+            st.error("❌ Model file corrupted / not downloaded correctly")
+            os.remove(MODEL_PATH)
 
 # -------------------------
 # UI STYLE (UNCHANGED)

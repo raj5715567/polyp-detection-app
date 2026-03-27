@@ -11,7 +11,7 @@ import gdown
 # -------------------------
 st.set_page_config(page_title="AI Polyp Detection", layout="wide")
 
-MODEL_PATH = "model.weights.h5"
+MODEL_PATH = "final.weights.h5"
 
 # -------------------------
 # DOWNLOAD MODEL
@@ -19,10 +19,17 @@ MODEL_PATH = "model.weights.h5"
 def download_model():
     if not os.path.exists(MODEL_PATH):
 
-        url = "https://drive.google.com/uc?id=1JCO8bi5W1RPUu6xJKVp3m0D-e02cZhrp"
+        url = "https://drive.google.com/uc?id=13t3y8TkT7H85p_2UpXikKz9ybxUWrzWq"
 
         with st.spinner("📥 Downloading model..."):
             gdown.download(url, MODEL_PATH, quiet=False, fuzzy=True)
+
+        size = os.path.getsize(MODEL_PATH) / (1024 * 1024)
+        st.write(f"Downloaded size: {size:.2f} MB")
+
+        if size < 300:
+            st.error("❌ Model file corrupted")
+            st.stop()
 
 # -------------------------
 # MODEL ARCHITECTURE
@@ -49,7 +56,9 @@ def DeeplabV3(input_shape=(256,256,3)):
     b4 = tf.keras.layers.GlobalAveragePooling2D()(layers[-1])
     b4 = tf.keras.layers.Reshape((1,1,b4.shape[-1]))(b4)
     b4 = conv_block(b4, 256)
-    b4 = tf.keras.layers.UpSampling2D(size=(layers[-1].shape[1], layers[-1].shape[2]), interpolation='bilinear')(b4)
+    b4 = tf.keras.layers.UpSampling2D(
+        size=(layers[-1].shape[1], layers[-1].shape[2]),
+        interpolation='bilinear')(b4)
 
     b0 = conv_block(layers[-1], 256)
     b1 = conv_block(layers[-1], 256, 6)
@@ -67,17 +76,21 @@ def DeeplabV3(input_shape=(256,256,3)):
     return tf.keras.models.Model(inputs=base_model.input, outputs=x)
 
 # -------------------------
-# LOAD MODEL (FINAL)
+# LOAD MODEL
 # -------------------------
 def load_model():
 
     download_model()
 
     model = DeeplabV3()
+
+    # build model
     model(np.zeros((1,256,256,3)))
 
-    # 🔥 THIS WILL NOW WORK
-    tf.keras.saving.load_weights_only(model, MODEL_PATH)
+    # ✅ LOAD WEIGHTS (FINAL FIX)
+    model.load_weights(MODEL_PATH)
+
+    st.success("✅ Model loaded successfully")
 
     return model
 
@@ -99,15 +112,38 @@ def preprocess(img):
 # -------------------------
 st.title("🧠 AI Polyp Detection")
 
-uploaded = st.file_uploader("Upload Image", type=["jpg","png","jpeg"])
+uploaded = st.file_uploader("📤 Upload Image", type=["jpg","png","jpeg"])
 
 if uploaded:
 
     image = Image.open(uploaded).convert("RGB")
+    img_np = np.array(image)
 
-    st.image(image, caption="Original")
+    col1, col2 = st.columns(2)
 
-    pred = model.predict(preprocess(image))
-    mask = (pred > 0.5).astype(np.uint8).squeeze()
+    with st.spinner("🔍 AI Analyzing..."):
 
-    st.image(mask*255, caption="Prediction")
+        pred = model.predict(preprocess(image))
+        mask = (pred > 0.5).astype(np.uint8).squeeze()
+
+        mask_resized = cv2.resize(mask, (img_np.shape[1], img_np.shape[0]))
+
+        overlay = img_np.copy()
+        overlay[mask_resized == 1] = [255,0,0]
+
+        blended = cv2.addWeighted(img_np,0.7,overlay,0.3,0)
+
+    with col1:
+        st.image(image, caption="Original Image")
+
+    with col2:
+        st.image(blended, caption="AI Detection")
+
+    st.subheader("Segmentation Mask")
+    st.image(mask*255)
+
+# -------------------------
+# FOOTER
+# -------------------------
+st.markdown("---")
+st.markdown("🚀 Final Year Project • AI Medical Assistant")

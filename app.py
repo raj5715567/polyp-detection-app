@@ -19,10 +19,17 @@ MODEL_PATH = "final_weights_fixed.h5"
 def download_model():
     if not os.path.exists(MODEL_PATH):
 
-        url = "PASTE_NEW_WEIGHTS_LINK"
+        url = "https://drive.google.com/uc?id=1FLxIMcIvtLNdgjNlsRxSNCwFB4b2weYc"
 
         with st.spinner("📥 Downloading model..."):
             gdown.download(url, MODEL_PATH, quiet=False)
+
+        size = os.path.getsize(MODEL_PATH) / (1024 * 1024)
+        st.write(f"Downloaded size: {size:.2f} MB")
+
+        if size < 50:
+            st.error("❌ Model file corrupted")
+            st.stop()
 
 # -------------------------
 # MODEL ARCHITECTURE
@@ -78,16 +85,20 @@ def load_model():
 
     model = DeeplabV3()
 
+    # build model
     model(np.zeros((1,256,256,3)))
 
-    model.load_weights(MODEL_PATH)
-
-    st.success("✅ Model loaded successfully")
+    try:
+        model.load_weights(MODEL_PATH)
+        st.success("✅ Model loaded successfully")
+    except Exception as e:
+        st.error(f"❌ Loading failed: {e}")
+        st.stop()
 
     return model
 
 # -------------------------
-# INIT
+# INIT MODEL
 # -------------------------
 model = load_model()
 
@@ -126,9 +137,16 @@ if uploaded:
         blended = cv2.addWeighted(img_np,0.7,overlay,0.3,0)
 
     with col1:
-        st.image(image, caption="Original")
+        st.image(image, caption="Original Image")
 
     with col2:
-        st.image(blended, caption="Detection")
+        st.image(blended, caption="AI Detection")
 
-    st.image(mask*255, caption="Mask")
+    st.subheader("Segmentation Mask")
+    st.image(mask*255)
+
+# -------------------------
+# FOOTER
+# -------------------------
+st.markdown("---")
+st.markdown("🚀 Final Year Project")

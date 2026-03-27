@@ -11,7 +11,7 @@ import gdown
 # -------------------------
 st.set_page_config(page_title="AI Polyp Detection", layout="wide")
 
-MODEL_PATH = "final_model.h5"
+MODEL_PATH = "final_weights_fixed.h5"
 
 # -------------------------
 # DOWNLOAD MODEL
@@ -19,40 +19,75 @@ MODEL_PATH = "final_model.h5"
 def download_model():
     if not os.path.exists(MODEL_PATH):
 
-        url = "https://drive.google.com/uc?id=1FLxIMcIvtLNdgjNlsRxSNCwFB4b2weYc"
+        url = "PASTE_NEW_WEIGHTS_LINK"
 
         with st.spinner("📥 Downloading model..."):
             gdown.download(url, MODEL_PATH, quiet=False)
 
-        size = os.path.getsize(MODEL_PATH) / (1024 * 1024)
-        st.write(f"Downloaded size: {size:.2f} MB")
+# -------------------------
+# MODEL ARCHITECTURE
+# -------------------------
+def DeeplabV3(input_shape=(256,256,3)):
 
-        if size < 100:
-            st.error("❌ Model file corrupted")
-            st.stop()
+    base_model = tf.keras.applications.ResNet50(
+        weights='imagenet',
+        include_top=False,
+        input_tensor=tf.keras.layers.Input(shape=input_shape)
+    )
+
+    layer_names = ['conv4_block6_out','conv5_block3_out']
+    layers = [base_model.get_layer(name).output for name in layer_names]
+
+    def conv_block(x, filters, rate=1):
+        x = tf.keras.layers.Conv2D(filters, 3 if rate > 1 else 1,
+                                  padding='same',
+                                  dilation_rate=rate,
+                                  use_bias=False)(x)
+        x = tf.keras.layers.BatchNormalization()(x)
+        return tf.keras.layers.Activation('relu')(x)
+
+    b4 = tf.keras.layers.GlobalAveragePooling2D()(layers[-1])
+    b4 = tf.keras.layers.Reshape((1,1,b4.shape[-1]))(b4)
+    b4 = conv_block(b4, 256)
+    b4 = tf.keras.layers.UpSampling2D(
+        size=(layers[-1].shape[1], layers[-1].shape[2]),
+        interpolation='bilinear')(b4)
+
+    b0 = conv_block(layers[-1], 256)
+    b1 = conv_block(layers[-1], 256, 6)
+    b2 = conv_block(layers[-1], 256, 12)
+    b3 = conv_block(layers[-1], 256, 18)
+
+    x = tf.keras.layers.Concatenate()([b4, b0, b1, b2, b3])
+    x = conv_block(x, 256)
+    x = tf.keras.layers.UpSampling2D(size=(4,4), interpolation='bilinear')(x)
+
+    x = tf.keras.layers.Conv2D(1,1)(x)
+    x = tf.keras.layers.Activation('sigmoid')(x)
+    x = tf.keras.layers.UpSampling2D(size=(8,8), interpolation='bilinear')(x)
+
+    return tf.keras.models.Model(inputs=base_model.input, outputs=x)
 
 # -------------------------
-# LOAD MODEL (FINAL FIX)
+# LOAD MODEL
 # -------------------------
 @st.cache_resource
 def load_model():
 
     download_model()
 
-    try:
-        model = tf.keras.models.load_model(
-            MODEL_PATH,
-            compile=False
-        )
-        st.success("✅ Model loaded successfully")
-    except Exception as e:
-        st.error(f"❌ Loading failed: {e}")
-        st.stop()
+    model = DeeplabV3()
+
+    model(np.zeros((1,256,256,3)))
+
+    model.load_weights(MODEL_PATH)
+
+    st.success("✅ Model loaded successfully")
 
     return model
 
 # -------------------------
-# INIT MODEL
+# INIT
 # -------------------------
 model = load_model()
 
@@ -97,9 +132,3 @@ if uploaded:
         st.image(blended, caption="Detection")
 
     st.image(mask*255, caption="Mask")
-
-# -------------------------
-# FOOTER
-# -------------------------
-st.markdown("---")
-st.markdown("🚀 Final Year Project")

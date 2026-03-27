@@ -24,20 +24,14 @@ def download_model():
         with st.spinner("📥 Downloading model..."):
             gdown.download(url, MODEL_PATH, quiet=False, fuzzy=True)
 
-        size = os.path.getsize(MODEL_PATH) / (1024 * 1024)
-        st.write(f"Downloaded size: {size:.2f} MB")
-
-        if size < 300:
-            st.error("❌ Model file corrupted")
-            st.stop()
-
 # -------------------------
-# MODEL ARCHITECTURE
+# MODEL ARCHITECTURE (FIXED)
 # -------------------------
 def DeeplabV3(input_shape=(256,256,3)):
 
+    # 🔥 FIX HERE
     base_model = tf.keras.applications.ResNet50(
-        weights=None,
+        weights='imagenet',   # ✅ MUST MATCH TRAINING
         include_top=False,
         input_tensor=tf.keras.layers.Input(shape=input_shape)
     )
@@ -83,11 +77,8 @@ def load_model():
     download_model()
 
     model = DeeplabV3()
-
-    # build model
     model(np.zeros((1,256,256,3)))
 
-    # ✅ LOAD WEIGHTS (FINAL FIX)
     model.load_weights(MODEL_PATH)
 
     st.success("✅ Model loaded successfully")
@@ -112,7 +103,7 @@ def preprocess(img):
 # -------------------------
 st.title("🧠 AI Polyp Detection")
 
-uploaded = st.file_uploader("📤 Upload Image", type=["jpg","png","jpeg"])
+uploaded = st.file_uploader("Upload Image", type=["jpg","png","jpeg"])
 
 if uploaded:
 
@@ -134,16 +125,9 @@ if uploaded:
         blended = cv2.addWeighted(img_np,0.7,overlay,0.3,0)
 
     with col1:
-        st.image(image, caption="Original Image")
+        st.image(image, caption="Original")
 
     with col2:
-        st.image(blended, caption="AI Detection")
+        st.image(blended, caption="Detection")
 
-    st.subheader("Segmentation Mask")
-    st.image(mask*255)
-
-# -------------------------
-# FOOTER
-# -------------------------
-st.markdown("---")
-st.markdown("🚀 Final Year Project • AI Medical Assistant")
+    st.image(mask*255, caption="Mask")

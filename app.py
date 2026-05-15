@@ -54,7 +54,7 @@ img {
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="title">🧠 AI Polyp Risk Detection</div>', unsafe_allow_html=True)
+st.markdown('<div class="title">🧠 AI Based Polyp Detection</div>', unsafe_allow_html=True)
 
 # -------------------------
 # MODEL (FIXED)

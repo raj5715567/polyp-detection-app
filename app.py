@@ -12,7 +12,7 @@ import gdown
 # -------------------------
 # CONFIG
 # -------------------------
-st.set_page_config(page_title="AI Polyp Detection", layout="wide")
+st.set_page_config(page_title="AI Based Polyp Detection", layout="wide")
 
 MODEL_PATH = "final_weights_fixed.h5"
 
